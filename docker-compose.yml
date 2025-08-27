@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: chai-bench-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pg}
+      POSTGRES_DB: ${POSTGRES_DB:-bench}
+    ports:
+    - "5432:5432"
+    volumes:
+    - ./data/pg:/var/lib/postgresql/data
+    - ./sql/schema_postgres.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
