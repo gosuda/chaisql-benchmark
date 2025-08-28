@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 )
 
 type Result struct {
@@ -91,7 +90,6 @@ func (r *Result) finalize() Result {
 }
 
 // --------- pretty printers ---------
-
 func (r Result) Pretty() string {
 	opsPerSec := 0.0
 	if r.Duration > 0 {
@@ -104,34 +102,16 @@ func (r Result) Pretty() string {
 
 	minDur, maxDur, spark := sparkline(r.hist.samples, 14)
 
-	title := strings.ToUpper(r.Workload)
-	header := " " + title + " "
-	const innerW = 70
-	headerPad := max(0, innerW-utf8.RuneCountInString(header))
-	top := "┌" + header + strings.Repeat("─", headerPad) + "┐"
-	bot := "└" + strings.Repeat("─", innerW) + "┘"
-
 	var b strings.Builder
-	b.WriteString(top + "\n")
-
-	writeLine := func(format string, args ...any) {
-		line := fmt.Sprintf(format, args...)
-		runes := utf8.RuneCountInString(line)
-		if runes < innerW {
-			line += strings.Repeat(" ", innerW-runes)
-		}
-		b.WriteString("│" + line + "│\n")
-	}
-
-	writeLine("Concurrency : %-7d  Duration : %-10s", r.Concurrency, r.Duration)
-	writeLine("Ops         : %-12s (%.1f ops/s)   Errors : %-8s (%.2f%%)",
-		commaI(r.Ops), opsPerSec, commaI(r.Errors), errRate)
-	writeLine("Latency P50 : %-8s  P95 : %-8s  P99 : %-8s",
-		fDur(r.P50), fDur(r.P95), fDur(r.P99))
+	fmt.Fprintf(&b, "Workload\t: %s\n", r.Workload)
+	fmt.Fprintf(&b, "Concurrency\t: %d\n", r.Concurrency)
+	fmt.Fprintf(&b, "Duration\t: %s\n", r.Duration)
+	fmt.Fprintf(&b, "Ops\t\t\t: %s (%.1f ops/s)\n", commaI(r.Ops), opsPerSec)
+	fmt.Fprintf(&b, "Errors\t\t: %s (%.2f%%)\n", commaI(r.Errors), errRate)
+	fmt.Fprintf(&b, "Latency\t\t: P50=%s  P95=%s  P99=%s\n", fDur(r.P50), fDur(r.P95), fDur(r.P99))
 	if spark != "" {
-		writeLine("Histogram   : %s  (min %s, max %s)", spark, fDur(minDur), fDur(maxDur))
+		fmt.Fprintf(&b, "Histogram\t: %s  (min %s, max %s)\n", spark, fDur(minDur), fDur(maxDur))
 	}
-	b.WriteString(bot + "\n")
 	return b.String()
 }
 
@@ -205,7 +185,7 @@ func sparkline(samples []time.Duration, bins int) (time.Duration, time.Duration,
 		sb.WriteRune(chars[level])
 	}
 
-	return s[0], s[len(s)-1], sb.String()
+	return lo, hi, sb.String()
 }
 
 func commaI(v int64) string {

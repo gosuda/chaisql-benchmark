@@ -4,13 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"time"
-
-	_ "github.com/chaisql/chai/driver" // "chai"
-	_ "github.com/jackc/pgx/v5/stdlib" // "pgx"
-	_ "github.com/mattn/go-sqlite3"    // "sqlite3"
 
 	"github.com/gosuda/chaisql-benchmark/bench"
 	"github.com/knadh/koanf/parsers/yaml"
@@ -25,12 +20,12 @@ import (
 var k = koanf.New(".")
 
 func main() {
-	mustSetDefault("engine", "pgx") // chai|sqlite3|pgx
-	mustSetDefault("dsn", "")       // auto-fill by engine if empty
-	mustSetDefault("concurrency", runtime.NumCPU())
+	mustSetDefault("engine", "chai") // chai|sqlite|pgx
+	mustSetDefault("dsn", "")        // auto-fill by engine if empty
+	mustSetDefault("concurrency", 1)
 	mustSetDefault("warmup", "5s")    // duration string
 	mustSetDefault("duration", "20s") // duration string
-	mustSetDefault("tx_batch", 100)
+	mustSetDefault("tx_batch", 1)
 	mustSetDefault("rows", 10000)
 	mustSetDefault("config", "config.yaml") // config file path
 
@@ -49,7 +44,7 @@ func main() {
 
 	fs := pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
 	fs.String("config", k.String("config"), "config file path (yaml)")
-	fs.String("engine", k.String("engine"), "chai|sqlite3|pgx")
+	fs.String("engine", k.String("engine"), "chai|sqlite|pgx")
 	fs.String("dsn", k.String("dsn"), "database DSN")
 	fs.Int("concurrency", k.Int("concurrency"), "number of workers")
 	fs.String("warmup", k.String("warmup"), "warmup duration (e.g. 10s)")
@@ -69,9 +64,9 @@ func main() {
 	if dsn == "" {
 		switch engine {
 		case "chai":
-			dsn = "file:./data/chai.db"
-		case "sqlite3":
-			dsn = "file:./data/sqlite.db?_journal_mode=WAL&_synchronous=FULL"
+			dsn = "./data/chai/chai.db"
+		case "sqlite":
+			dsn = "file:./data/sqlite/sqlite.db?cache=shared&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)"
 		case "pgx":
 			dsn = "postgres://postgres:pg@127.0.0.1:5432/bench?sslmode=disable"
 		default:

@@ -38,10 +38,14 @@ func Run(ctx context.Context, cfg Config) ([]Result, error) {
 	}
 
 	insertW := insertWorkload(cfg.Engine, max(1, cfg.TxBatch))
-	selectW := selectWorkload(cfg.Engine)
-	rangeW := rangeWorkload(cfg.Engine, 100)
-	updateW := updateWorkload(cfg.Engine)
-	deleteW := deleteWorkload(cfg.Engine)
+	prefetch, err := FetchKeySnapshot(ctx, db, cfg.Engine, 2048)
+	if err != nil {
+		return nil, err
+	}
+	selectW := selectWorkload(cfg.Engine, prefetch)
+	rangeW := rangeWorkload(cfg.Engine, prefetch, 100)
+	updateW := updateWorkload(cfg.Engine, prefetch)
+	deleteW := deleteWorkload(cfg.Engine, prefetch)
 
 	results := make([]Result, 0, 5)
 
@@ -74,7 +78,7 @@ func initSchema(ctx context.Context, db *sql.DB, engine string) error {
 	switch engine {
 	case "pgx":
 		schema = embed.PgSchema
-	case "sqlite3":
+	case "sqlite":
 		schema = embed.SqliteSchema
 	case "chai":
 		schema = embed.ChaiSchema
@@ -83,9 +87,4 @@ func initSchema(ctx context.Context, db *sql.DB, engine string) error {
 	}
 	_, err := db.ExecContext(ctx, schema)
 	return err
-}
-
-func Open(engine, dsn string) (*sql.DB, error) {
-	// engine must be one of: chai | sqlite3 | pgx
-	return sql.Open(engine, dsn)
 }

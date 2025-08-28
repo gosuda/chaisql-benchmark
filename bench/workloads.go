@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -50,7 +51,7 @@ func insertWorkload(engine string, batch int) WorkloadFunc {
 						_ = tx.Rollback()
 						continue
 					}
-					for i := 0; i < batch; i++ {
+					for range batch {
 						k, err := gen.GenerateString()
 						if err != nil {
 							res.addErrorCnt(err)
@@ -75,34 +76,44 @@ func insertWorkload(engine string, batch int) WorkloadFunc {
 	}
 }
 
-func selectWorkload(engine string) WorkloadFunc {
+func selectWorkload(engine string, keys []string) WorkloadFunc {
 	query := `SELECT v FROM kv WHERE k = ?`
 	if engine == "pgx" {
 		query = `SELECT v FROM kv WHERE k = $1`
 	}
 	return func(ctx context.Context, db *sql.DB, conc int, dur time.Duration) Result {
-		stmt, _ := db.PrepareContext(ctx, query)
-		defer stmt.Close()
-		var wg sync.WaitGroup
-		res := newResult("point", conc, dur)
+		res := newResult("select", conc, dur)
+		if len(keys) == 0 {
+			return res.finalize()
+		}
+
 		ctx, cancel := context.WithTimeout(ctx, dur)
 		defer cancel()
+
+		stmt, err := db.PrepareContext(ctx, query)
+		if err != nil {
+			res.addErrorCnt(err)
+			return res.finalize()
+		}
+		defer stmt.Close()
+
+		var wg sync.WaitGroup
 		for w := 0; w < conc; w++ {
 			wg.Add(1)
-			go func(id int) {
+			go func(worker int) {
 				defer wg.Done()
+				rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(worker)))
 				for {
 					select {
 					case <-ctx.Done():
 						return
 					default:
 					}
-					key := fmt.Sprintf("key-%08d", id)
+					key := keys[rnd.Intn(len(keys))]
 					start := time.Now()
-					row := stmt.QueryRowContext(ctx, key)
 					var v []byte
-					if err := row.Scan(&v); err != nil {
-						res.addErrorCnt(err)
+					if err := stmt.QueryRowContext(ctx, key).Scan(&v); err != nil {
+						res.addErrorCnt(err) // 원한다면 ErrNoRows는 별도 계수
 						continue
 					}
 					res.addLatency(time.Since(start))
@@ -114,30 +125,46 @@ func selectWorkload(engine string) WorkloadFunc {
 	}
 }
 
-func rangeWorkload(engine string, limit int) WorkloadFunc {
+func rangeWorkload(engine string, keys []string, limit int) WorkloadFunc {
 	query := `SELECT k,v FROM kv WHERE k BETWEEN ? AND ? LIMIT ?`
 	if engine == "pgx" {
 		query = `SELECT k,v FROM kv WHERE k BETWEEN $1 AND $2 LIMIT $3`
 	}
 	return func(ctx context.Context, db *sql.DB, conc int, dur time.Duration) Result {
-		stmt, _ := db.PrepareContext(ctx, query)
-		defer stmt.Close()
-		var wg sync.WaitGroup
 		res := newResult("range", conc, dur)
+		if len(keys) < 2 {
+			return res.finalize()
+		}
+
 		ctx, cancel := context.WithTimeout(ctx, dur)
 		defer cancel()
+
+		stmt, err := db.PrepareContext(ctx, query)
+		if err != nil {
+			res.addErrorCnt(err)
+			return res.finalize()
+		}
+		defer stmt.Close()
+
+		var wg sync.WaitGroup
 		for w := 0; w < conc; w++ {
 			wg.Add(1)
-			go func(id int) {
+			go func(worker int) {
 				defer wg.Done()
+				rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(worker)))
 				for {
 					select {
 					case <-ctx.Done():
 						return
 					default:
 					}
-					lo := fmt.Sprintf("key-%08d", id*1000)
-					hi := fmt.Sprintf("key-%08d", id*1000+999)
+					a := keys[rnd.Intn(len(keys))]
+					b := keys[rnd.Intn(len(keys))]
+					lo, hi := a, b
+					if lo > hi {
+						lo, hi = hi, lo
+					}
+
 					start := time.Now()
 					rows, err := stmt.QueryContext(ctx, lo, hi, limit)
 					if err != nil {
@@ -149,7 +176,7 @@ func rangeWorkload(engine string, limit int) WorkloadFunc {
 						var v []byte
 						_ = rows.Scan(&k, &v)
 					}
-					rows.Close()
+					_ = rows.Close()
 					res.addLatency(time.Since(start))
 				}
 			}(w)
@@ -159,15 +186,17 @@ func rangeWorkload(engine string, limit int) WorkloadFunc {
 	}
 }
 
-func updateWorkload(engine string) WorkloadFunc {
+func updateWorkload(engine string, keys []string) WorkloadFunc {
 	q := `UPDATE kv SET v = ? WHERE k = ?`
-	qPick := `SELECT k FROM kv ORDER BY k DESC LIMIT 1`
 	if engine == "pgx" {
 		q = `UPDATE kv SET v = $1 WHERE k = $2`
-		qPick = `SELECT k FROM kv ORDER BY k DESC LIMIT 1`
 	}
 	return func(ctx context.Context, db *sql.DB, conc int, dur time.Duration) Result {
 		res := newResult("update", conc, dur)
+		if len(keys) == 0 {
+			return res.finalize()
+		}
+
 		ctx, cancel := context.WithTimeout(ctx, dur)
 		defer cancel()
 
@@ -178,29 +207,19 @@ func updateWorkload(engine string) WorkloadFunc {
 		}
 		defer stmtUpd.Close()
 
-		stmtPick, err := db.PrepareContext(ctx, qPick)
-		if err != nil {
-			res.addErrorCnt(err)
-			return res.finalize()
-		}
-		defer stmtPick.Close()
-
 		var wg sync.WaitGroup
 		for w := 0; w < conc; w++ {
 			wg.Add(1)
-			go func() {
+			go func(worker int) {
 				defer wg.Done()
+				rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(worker)))
 				for {
 					select {
 					case <-ctx.Done():
 						return
 					default:
 					}
-					var k string
-					if err := stmtPick.QueryRowContext(ctx).Scan(&k); err != nil {
-						res.addErrorCnt(err)
-						continue
-					}
+					k := keys[rnd.Intn(len(keys))]
 					start := time.Now()
 					if _, err := stmtUpd.ExecContext(ctx, []byte("updated"), k); err != nil {
 						res.addErrorCnt(err)
@@ -208,22 +227,24 @@ func updateWorkload(engine string) WorkloadFunc {
 					}
 					res.addLatency(time.Since(start))
 				}
-			}()
+			}(w)
 		}
 		wg.Wait()
 		return res.finalize()
 	}
 }
 
-func deleteWorkload(engine string) WorkloadFunc {
+func deleteWorkload(engine string, keys []string) WorkloadFunc {
 	q := `DELETE FROM kv WHERE k = ?`
-	qPick := `SELECT k FROM kv ORDER BY k ASC LIMIT 1`
 	if engine == "pgx" {
 		q = `DELETE FROM kv WHERE k = $1`
-		qPick = `SELECT k FROM kv ORDER BY k ASC LIMIT 1`
 	}
 	return func(ctx context.Context, db *sql.DB, conc int, dur time.Duration) Result {
 		res := newResult("delete", conc, dur)
+		if len(keys) == 0 {
+			return res.finalize()
+		}
+
 		ctx, cancel := context.WithTimeout(ctx, dur)
 		defer cancel()
 
@@ -234,29 +255,19 @@ func deleteWorkload(engine string) WorkloadFunc {
 		}
 		defer stmtDel.Close()
 
-		stmtPick, err := db.PrepareContext(ctx, qPick)
-		if err != nil {
-			res.addErrorCnt(err)
-			return res.finalize()
-		}
-		defer stmtPick.Close()
-
 		var wg sync.WaitGroup
 		for w := 0; w < conc; w++ {
 			wg.Add(1)
-			go func() {
+			go func(worker int) {
 				defer wg.Done()
+				rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(worker)))
 				for {
 					select {
 					case <-ctx.Done():
 						return
 					default:
 					}
-					var k string
-					if err := stmtPick.QueryRowContext(ctx).Scan(&k); err != nil {
-						res.addErrorCnt(err)
-						continue
-					}
+					k := keys[rnd.Intn(len(keys))]
 					start := time.Now()
 					if _, err := stmtDel.ExecContext(ctx, k); err != nil {
 						res.addErrorCnt(err)
@@ -264,9 +275,35 @@ func deleteWorkload(engine string) WorkloadFunc {
 					}
 					res.addLatency(time.Since(start))
 				}
-			}()
+			}(w)
 		}
 		wg.Wait()
 		return res.finalize()
 	}
+}
+func FetchKeySnapshot(ctx context.Context, db *sql.DB, engine string, n int) ([]string, error) {
+	q := fmt.Sprintf(`SELECT k FROM kv ORDER BY k DESC LIMIT %d`, n)
+
+	rows, err := db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	keys := make([]string, 0, n)
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("snapshot is empty: no keys fetched")
+	}
+	return keys, nil
 }

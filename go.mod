@@ -4,13 +4,13 @@ go 1.24.3
 
 require (
 	github.com/chaisql/chai v0.16.1
+	github.com/glebarez/go-sqlite v1.22.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/knadh/koanf/parsers/yaml v1.1.0
 	github.com/knadh/koanf/providers/env v1.1.0
 	github.com/knadh/koanf/providers/file v1.2.0
 	github.com/knadh/koanf/providers/posflag v1.0.1
 	github.com/knadh/koanf/v2 v2.2.2
-	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/pflag v1.0.6
 	gosuda.org/randflake v1.6.2
@@ -29,11 +29,13 @@ require (
 	github.com/cockroachdb/redact v1.1.6 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20250429170803-42689b6311bb // indirect
 	github.com/dromara/carbon/v2 v2.6.11 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/getsentry/sentry-go v0.35.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/google/uuid v1.5.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -42,7 +44,7 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.19 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -51,6 +53,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.3 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
@@ -59,4 +62,8 @@ require (
 	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 	google.golang.org/protobuf v1.36.7 // indirect
+	modernc.org/libc v1.37.6 // indirect
+	modernc.org/mathutil v1.6.0 // indirect
+	modernc.org/memory v1.7.2 // indirect
+	modernc.org/sqlite v1.28.0 // indirect
 )
