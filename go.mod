@@ -13,6 +13,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/pflag v1.0.6
+	gosuda.org/randflake v1.6.2
 )
 
 require (

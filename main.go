@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -24,14 +25,13 @@ import (
 var k = koanf.New(".")
 
 func main() {
-	mustSetDefault("engine", "pgx")     // chai|sqlite3|pgx
-	mustSetDefault("dsn", "")           // auto-fill by engine if empty
-	mustSetDefault("workload", "point") // point|range|insert
-	mustSetDefault("concurrency", 4)
-	mustSetDefault("warmup", "10s")   // duration string
-	mustSetDefault("duration", "30s") // duration string
-	mustSetDefault("tx_batch", 1)
-	mustSetDefault("rows", 100000)
+	mustSetDefault("engine", "pgx") // chai|sqlite3|pgx
+	mustSetDefault("dsn", "")       // auto-fill by engine if empty
+	mustSetDefault("concurrency", runtime.NumCPU())
+	mustSetDefault("warmup", "5s")    // duration string
+	mustSetDefault("duration", "20s") // duration string
+	mustSetDefault("tx_batch", 100)
+	mustSetDefault("rows", 10000)
 	mustSetDefault("config", "config.yaml") // config file path
 
 	cfgPath := k.String("config")
@@ -51,7 +51,6 @@ func main() {
 	fs.String("config", k.String("config"), "config file path (yaml)")
 	fs.String("engine", k.String("engine"), "chai|sqlite3|pgx")
 	fs.String("dsn", k.String("dsn"), "database DSN")
-	fs.String("workload", k.String("workload"), "point|range|insert")
 	fs.Int("concurrency", k.Int("concurrency"), "number of workers")
 	fs.String("warmup", k.String("warmup"), "warmup duration (e.g. 10s)")
 	fs.String("duration", k.String("duration"), "measurement duration (e.g. 30s)")
@@ -92,12 +91,10 @@ func main() {
 	cfg := bench.Config{
 		Engine:      engine,
 		DSN:         dsn,
-		Workload:    k.String("workload"),
 		Concurrency: k.Int("concurrency"),
 		Warmup:      warmup,
 		Duration:    dur,
 		TxBatch:     k.Int("tx_batch"),
-		Rows:        k.Int("rows"),
 	}
 
 	ctx := context.Background()
@@ -105,7 +102,9 @@ func main() {
 	if runErr != nil {
 		log.Fatal().Err(runErr).Msg("bench run failed")
 	}
-	fmt.Println(res.Pretty())
+	for _, r := range res {
+		fmt.Println(r.Pretty())
+	}
 }
 
 func mustSetDefault(key string, v any) {

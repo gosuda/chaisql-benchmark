@@ -2,102 +2,90 @@ package bench
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"fmt"
-	"sort"
-	"strings"
-	"sync/atomic"
 	"time"
+
+	embed "github.com/gosuda/chaisql-benchmark/sql"
+	"github.com/rs/zerolog/log"
 )
 
 type Config struct {
 	Engine      string
 	DSN         string
-	Workload    string
 	Concurrency int
 	Warmup      time.Duration
 	Duration    time.Duration
 	TxBatch     int
-	Rows        int
 }
 
-type Result struct {
-	Name        string        `json:"name"`
-	Concurrency int           `json:"concurrency"`
-	Duration    time.Duration `json:"duration"`
-	Ops         int64         `json:"ops"`
-	Errors      int64         `json:"errors"`
-	P50         time.Duration `json:"p50"`
-	P95         time.Duration `json:"p95"`
-	P99         time.Duration `json:"p99"`
-}
-
-func (r Result) Pretty() string {
-	b, _ := json.MarshalIndent(r, "", " ")
-	return string(b)
-}
-
-type histogram struct{ samples []time.Duration }
-
-func (h *histogram) add(d time.Duration) { h.samples = append(h.samples, d) }
-func (h *histogram) quantile(q float64) time.Duration {
-	if len(h.samples) == 0 {
-		return 0
+func runPhase(ctx context.Context, db *sql.DB, conc int, warmup, dur time.Duration, wf WorkloadFunc) Result {
+	if warmup > 0 {
+		_ = wf(ctx, db, conc, warmup)
 	}
-	s := append([]time.Duration(nil), h.samples...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
-	idx := int(float64(len(s)-1) * q)
-	return s[idx]
+	return wf(ctx, db, conc, dur)
 }
 
-func newResult(name string, conc int, dur time.Duration) Result {
-	return Result{Name: name, Concurrency: conc, Duration: dur}
-}
-
-func (r *Result) addLatency(d time.Duration) { atomic.AddInt64(&r.Ops, 1) /* count per op only */ }
-func (r *Result) addError(err error)         { atomic.AddInt64(&r.Errors, 1) }
-
-func (r Result) finalize() Result { return r }
-
-// Run executes init -> warmup -> selected workload run.
-func Run(ctx context.Context, cfg Config) (Result, error) {
+func Run(ctx context.Context, cfg Config) ([]Result, error) {
 	db, err := Open(cfg.Engine, cfg.DSN)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	defer db.Close()
 
-	// schema & data
 	if err := initSchema(ctx, db, cfg.Engine); err != nil {
-		return Result{}, err
-	}
-	if err := loadKV(ctx, db, cfg.Engine, cfg.Rows, max(1, cfg.TxBatch)); err != nil {
-		return Result{}, err
+		return nil, err
 	}
 
-	// select workload
-	var wl WorkloadFunc
-	switch strings.ToLower(cfg.Workload) {
-	case "point":
-		wl = pointWorkload(cfg.Engine)
-	case "range":
-		wl = rangeWorkload(cfg.Engine, 100)
-	case "insert":
-		wl = insertWorkload(cfg.Engine, max(1, cfg.TxBatch))
-	default:
-		return Result{}, fmt.Errorf("unknown workload: %s", cfg.Workload)
-	}
+	insertW := insertWorkload(cfg.Engine, max(1, cfg.TxBatch))
+	selectW := selectWorkload(cfg.Engine)
+	rangeW := rangeWorkload(cfg.Engine, 100)
+	updateW := updateWorkload(cfg.Engine)
+	deleteW := deleteWorkload(cfg.Engine)
 
-	// warmup
-	_ = wl(ctx, db, cfg.Concurrency, cfg.Warmup)
-	// timed
-	res := wl(ctx, db, cfg.Concurrency, cfg.Duration)
-	return res, nil
+	results := make([]Result, 0, 5)
+
+	// insert phase
+	log.Info().Msg("1. insert workload start")
+	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, insertW))
+
+	// select phase
+	log.Info().Msg("2. select workload start")
+	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, selectW))
+
+	// range phase
+	log.Info().Msg("3. range workload start")
+	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, rangeW))
+
+	// update phase
+	log.Info().Msg("4. update workload start")
+	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, updateW))
+
+	// delete phase
+	log.Info().Msg("5. delete workload start")
+	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, deleteW))
+
+	log.Info().Msg("all workloads completed")
+	return results, nil
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+func initSchema(ctx context.Context, db *sql.DB, engine string) error {
+	var schema string
+	switch engine {
+	case "pgx":
+		schema = embed.PgSchema
+	case "sqlite3":
+		schema = embed.SqliteSchema
+	case "chai":
+		schema = embed.ChaiSchema
+	default:
+		return fmt.Errorf("unsupported engine: %s", engine)
 	}
-	return b
+	_, err := db.ExecContext(ctx, schema)
+	return err
+}
+
+func Open(engine, dsn string) (*sql.DB, error) {
+	// engine must be one of: chai | sqlite3 | pgx
+	return sql.Open(engine, dsn)
 }
