@@ -13,30 +13,21 @@ import (
 )
 
 func Open(engine, dsn string) (*sql.DB, error) {
-	switch strings.ToLower(engine) {
+	switch e := strings.ToLower(engine); e {
 	case "chai":
 		p := strings.TrimPrefix(dsn, "file:")
 		if p != "" && p != "." {
-			_ = os.MkdirAll(filepath.Dir(filepath.FromSlash(p)), 0o755)
+			_ = os.MkdirAll(filepath.Dir(filepath.FromSlash(p)), 0755)
 		}
-		db, err := sql.Open("chai", p)
-		if err != nil {
-			return nil, err
-		}
-		// db.SetMaxOpenConns(10)
-		// db.SetMaxIdleConns(10)
-		return db, nil
-
+		return sql.Open(e, p)
 	case "sqlite", "sqlite3":
-		driver := "sqlite"
-		db, err := sql.Open(driver, dsn)
-		if err != nil {
-			return nil, err
+		p := strings.TrimPrefix(dsn, "file:")
+		if p != "" && p != "." {
+			_ = os.MkdirAll(filepath.Dir(filepath.FromSlash(p)), 0755)
 		}
-		return db, nil
-
+		return sql.Open(e, dsn)
 	case "pgx":
-		return sql.Open("pgx", dsn)
+		return sql.Open(e, dsn)
 	}
 	return nil, fmt.Errorf("unknown engine: %s", engine)
 }

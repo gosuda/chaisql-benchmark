@@ -37,35 +37,35 @@ func Run(ctx context.Context, cfg Config) ([]Result, error) {
 		return nil, err
 	}
 
-	insertW := insertWorkload(cfg.Engine, max(1, cfg.TxBatch))
-	prefetch, err := FetchKeySnapshot(ctx, db, cfg.Engine, 2048)
-	if err != nil {
-		return nil, err
-	}
-	selectW := selectWorkload(cfg.Engine, prefetch)
-	rangeW := rangeWorkload(cfg.Engine, prefetch, 100)
-	updateW := updateWorkload(cfg.Engine, prefetch)
-	deleteW := deleteWorkload(cfg.Engine, prefetch)
-
 	results := make([]Result, 0, 5)
 
 	// insert phase
 	log.Info().Msg("1. insert workload start")
+	insertW := insertWorkload(cfg.Engine, max(1, cfg.TxBatch))
 	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, insertW))
 
+	prefetch, err := FetchKeySnapshot(ctx, db, cfg.Engine, 2048)
+	if err != nil {
+		return nil, err
+	}
+
 	// select phase
+	selectW := selectWorkload(cfg.Engine, prefetch)
 	log.Info().Msg("2. select workload start")
 	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, selectW))
 
 	// range phase
+	rangeW := rangeWorkload(cfg.Engine, prefetch, 100)
 	log.Info().Msg("3. range workload start")
 	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, rangeW))
 
 	// update phase
+	updateW := updateWorkload(cfg.Engine, prefetch)
 	log.Info().Msg("4. update workload start")
 	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, updateW))
 
 	// delete phase
+	deleteW := deleteWorkload(cfg.Engine, prefetch)
 	log.Info().Msg("5. delete workload start")
 	results = append(results, runPhase(ctx, db, cfg.Concurrency, cfg.Warmup, cfg.Duration, deleteW))
 
